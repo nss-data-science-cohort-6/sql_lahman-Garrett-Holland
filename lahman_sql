@@ -1,5 +1,5 @@
 -- 1. Find all players in the database who played at Vanderbilt University. Create a list showing each player's first and last names as well as the total salary they earned in the major leagues. Sort this list in descending order by the total salary earned. Which Vanderbilt player earned the most money in the majors?
-SELECT people.namefirst, people.namelast, sum(salaries.salary) as total_salary
+SELECT people.namefirst, people.namelast, sum(salaries.salary) / count(DISTINCT collegeplaying.yearid) as total_salary
 FROM collegeplaying
 JOIN schools ON collegeplaying.schoolid = schools.schoolid
 JOIN people ON collegeplaying.playerid = people.playerid
@@ -52,13 +52,63 @@ ORDER BY stolen_base_percentage DESC
 LIMIT 1;
 
 -- 5. From 1970 to 2016, what is the largest number of wins for a team that did not win the world series? What is the smallest number of wins for a team that did win the world series? Doing this will probably result in an unusually small number of wins for a world series champion; determine why this is the case. Then redo your query, excluding the problem year. How often from 1970 to 2016 was it the case that a team with the most wins also won the world series? What percentage of the time?
+SELECT teams.yearid, teamsfranchises.franchname, teams.w as most_wins
+FROM teams
+JOIN teamsfranchises ON teams.franchid = teamsfranchises.franchid
+WHERE teams.yearid BETWEEN 1970 AND 2016 AND teams.wswin = 'N'
+AND teams.w = (SELECT max(w) FROM teams WHERE yearid = teams.yearid AND wswin = 'N')
+ORDER BY teams.yearid;
 
 -- 6. Which managers have won the TSN Manager of the Year award in both the National League (NL) and the American League (AL)? Give their full name and the teams that they were managing when they won the award.
+SELECT DISTINCT people.namefirst, people.namelast,
+MIN(CASE WHEN awardsmanagers.lgid = 'NL' THEN awardsmanagers.awardid END) AS team_NL,
+MIN(CASE WHEN awardsmanagers.lgid = 'AL' THEN awardsmanagers.awardid END) AS team_AL
+FROM people
+JOIN awardsmanagers ON awardsmanagers.playerid = people.playerid
+WHERE awardsmanagers.awardid = 'TSN Manager of the Year'
+GROUP BY people.namefirst, people.namelast
+HAVING COUNT(DISTINCT awardsmanagers.lgid) = 2;
 
 -- 7. Which pitcher was the least efficient in 2016 in terms of salary / strikeouts? Only consider pitchers who started at least 10 games (across all teams). Note that pitchers often play for more than one team in a season, so be sure that you are counting all stats for each player.
+SELECT people.namefirst, people.namelast,
+SUM(salaries.salary) / SUM(pitching.so) AS salary_per_strikeout
+FROM pitching
+JOIN people ON pitching.playerid = people.playerid
+JOIN salaries ON pitching.playerid = salaries.playerid AND pitching.yearid = salaries.yearid
+WHERE pitching.yearid = 2016 AND pitching.g >= 10
+GROUP BY people.playerid, people.namefirst, people.namelast
+ORDER BY salary_per_strikeout
+LIMIT 1;
 
 -- 8. Find all players who have had at least 3000 career hits. Report those players' names, total number of hits, and the year they were inducted into the hall of fame (If they were not inducted into the hall of fame, put a null in that column.) Note that a player being inducted into the hall of fame is indicated by a 'Y' in the inducted column of the halloffame table.
+SELECT people.namefirst, people.namelast, SUM(batting.h) AS total_hits, halloffame.yearid
+FROM batting
+JOIN people ON batting.playerid = people.playerid
+LEFT JOIN halloffame ON batting.playerid = halloffame.playerid AND halloffame.inducted = 'Y'
+GROUP BY people.playerid, people.namefirst, people.namelast, halloffame.yearid
+HAVING SUM(batting.h) >= 3000
+ORDER BY total_hits DESC;
 
 -- 9. Find all players who had at least 1,000 hits for two different teams. Report those players' full names.
+SELECT people.namefirst, people.namelast
+FROM (
+SELECT playerid, SUM(h) AS total_hits
+FROM batting
+GROUP BY playerid, teamid
+HAVING SUM(h) >= 1000
+) AS player_stats
+JOIN people ON people.playerid = player_stats.playerid
+GROUP BY people.playerid, people.namefirst, people.namelast
+HAVING COUNT(*) >= 2;
 
 -- 10. Find all players who hit their career highest number of home runs in 2016. Consider only players who have played in the league for at least 10 years, and who hit at least one home run in 2016. Report the players' first and last names and the number of home runs they hit in 2016.
+WITH player_stats AS (
+SELECT batting.playerid, namefirst, namelast, SUM(CASE WHEN yearid = 2016 THEN hr ELSE 0 END) AS home_runs_2016, COUNT(DISTINCT yearid) AS years_played
+FROM batting
+JOIN people ON batting.playerid = people.playerid
+GROUP BY batting.playerid, namefirst, namelast
+)
+SELECT namefirst, namelast, home_runs_2016
+FROM player_stats
+WHERE years_played >= 10 AND home_runs_2016 > 0 
+ORDER BY home_runs_2016 DESC;
